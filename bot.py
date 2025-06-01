@@ -1,91 +1,102 @@
 import asyncio
 from datetime import datetime, timedelta
 from telethon import TelegramClient, events
+import re
 
-# ==== НАСТРОЙКИ ====
-api_id = 27481215
-api_hash = '75f495f542a5beb8ba632b70fc7ebf79'
+api_id = 27481215  # ← Вставь свой актуальный API ID
+api_hash = '75f495f542a5beb8ba632b70fc7ebf79'  # ← и API Hash
 bot_token = '7639845168:AAG770ffbEQRP4W-Qk2jcnoG5x--SjyuzA0'
-notify_user = '@Mytracksignal'
+user_tag = '@Mytracksignal'
 
-# ID всех папок (чатов), которые отслеживаются:
-chat_ids = [
-    -1002048172508, -1002058755890, -1002146109187,
-    -1001891589065, -1001974198702, -1001840337788,
-    -1002011050670, -1002084209596, -1002094849653,
-    -1002193485779, -1002202792246, -1002215306818,
-    -1002438264294, -1002400892367, -1002420417890
-]
+# Названия групп по ID
+group_names = {
+    -1002048172508: "💰Валютный рынок💰1М⌛️",
+    -1002058755890: "💰Валютный рынок💰2М⌛️",
+    -1002146109187: "💰Валютный рынок💰3М⌛️",
+    -1001891589065: "💰Валютный рынок OTC💰1М⌛️",
+    -1001974198702: "💰Валютный рынок OTC💰2М⌛️",
+    -1001840337788: "💰Валютный рынок OTC💰3М⌛️",
+    -1002011050670: "💰Акции ОТС💰1М⌛️",
+    -1002084209596: "💰Акции ОТС💰2М⌛️",
+    -1002094849653: "💰Акции ОТС💰3М⌛️",
+    -1002193485779: "💰КРИПТА ОТС💰1М⌛️",
+    -1002202792246: "💰КРИПТА ОТС💰2М⌛️",
+    -1002215306818: "💰КРИПТА ОТС💰3М⌛️",
+    -1002438264294: "🛢 Сырьевые товары 🛢 ОТС 1М",
+    -1002400892367: "🛢 Сырьевые товары 🛢 ОТС 2М",
+    -1002420417890: "🛢 Сырьевые товары 🛢 ОТС 3М"
+}
 
-dogon_words = ['догон', 'догону', 'догоном', 'догоне', 'догонов']
+client = TelegramClient('anon_session', api_id, api_hash).start(bot_token=bot_token)
 
-client = TelegramClient('anon', api_id, api_hash).start(bot_token=bot_token)
+plus_counter = {chat_id: 0 for chat_id in group_names}
+triple_plus_log = {chat_id: 0 for chat_id in group_names}
 
-# Хранение состояния для каждого чата
-signal_state = {chat_id: {'ready': False, 'is_clean': True} for chat_id in chat_ids}
-plus_streaks = {chat_id: [] for chat_id in chat_ids}
-daily_stats = {chat_id: 0 for chat_id in chat_ids}
+# Варианты слова "догон"
+dogon_variants = ['догон', 'догону', 'догоном', 'догонов', 'ко второму догону', 'второй догон']
 
-@client.on(events.NewMessage(chats=chat_ids))
+# Проверка, нужно ли считать сообщение за чистый сигнал
+def is_clean_signal(text):
+    text = text.lower()
+    if 'плюс' not in text:
+        return False
+    if any(d in text for d in dogon_variants):
+        return False
+    return True
+
+@client.on(events.NewMessage(chats=list(group_names)))
 async def handler(event):
-    message = event.message.message.lower()
     chat_id = event.chat_id
-    chat_title = (await event.get_chat()).title
+    message = event.raw_text.lower()
 
-    # Если сообщение содержит слово "готовим"
-    if 'готовим' in message:
-        signal_state[chat_id] = {'ready': True, 'is_clean': True}
+    # Если это сообщение содержит и "готовим" и "догон" — игнорируем
+    if 'готовим' in message and any(d in message for d in dogon_variants):
         return
 
-    # Если содержит догон — сбрасываем чистоту
-    if any(word in message for word in dogon_words):
-        signal_state[chat_id]['is_clean'] = False
-        plus_streaks[chat_id] = []
-        return
+    # Если это чистый плюс
+    if is_clean_signal(message):
+        plus_counter[chat_id] += 1
+        if plus_counter[chat_id] == 3:
+            triple_plus_log[chat_id] += 1
+            plus_counter[chat_id] = 0
+            group = group_names.get(chat_id, "Неизвестная группа")
+            await client.send_message(chat_id, f"🔥 {user_tag}, обнаружено 3 плюса подряд в группе: {group}")
+    elif 'плюс' not in message:
+        plus_counter[chat_id] = 0
 
-    # Если чистый сигнал активен и приходит "плюс"
-    if signal_state[chat_id]['ready'] and signal_state[chat_id]['is_clean']:
-        if 'плюс' in message:
-            plus_streaks[chat_id].append(datetime.now())
-            if len(plus_streaks[chat_id]) > 3:
-                plus_streaks[chat_id].pop(0)
-
-            if len(plus_streaks[chat_id]) == 3:
-                await client.send_message(chat_id,
-                    f"✅ Обнаружено 3 сигнала подряд в плюсе!\n📂 Папка: {chat_title}\n🔔 {notify_user}"
-                )
-                daily_stats[chat_id] += 1
-                plus_streaks[chat_id] = []
-                signal_state[chat_id] = {'ready': False, 'is_clean': True}
-
-# Сообщение “бот активен” каждые 5 минут
-async def status_notifier():
-    while True:
-        now = datetime.now().strftime('%H:%M:%S')
-        for chat_id in chat_ids:
-            await client.send_message(chat_id, f"🤖 Бот работает и ожидает сигналы... ({now})")
-        await asyncio.sleep(300)
-
-# Статистика в 23:59
-async def daily_summary():
+# Сообщение "бот активен" каждые 5 минут
+async def notify_alive():
     while True:
         now = datetime.now()
-        target = datetime.combine(now.date(), datetime.strptime("23:59", "%H:%M").time())
+        for chat_id in group_names:
+            try:
+                await client.send_message(chat_id, "🤖 Бот активен. Ожидает сигналы...")
+            except Exception:
+                continue
+        await asyncio.sleep(300)
+
+# Ежедневная статистика
+async def send_daily_stats():
+    while True:
+        now = datetime.now()
+        target = now.replace(hour=23, minute=59, second=0, microsecond=0)
         if now > target:
             target += timedelta(days=1)
-        await asyncio.sleep((target - now).seconds)
-        for chat_id in chat_ids:
-            if daily_stats[chat_id] > 0:
-                await client.send_message(chat_id,
-                    f"📊 Статистика за сутки:\n✅ 3 плюса подряд: {daily_stats[chat_id]} раз(а)"
-                )
-            daily_stats[chat_id] = 0  # Сброс на новый день
+        await asyncio.sleep((target - now).total_seconds())
 
-# Запуск
+        text = "📊 Статистика за день:\n"
+        for chat_id, count in triple_plus_log.items():
+            name = group_names.get(chat_id, str(chat_id))
+            text += f"{name} — {count} ситуаций\n"
+            triple_plus_log[chat_id] = 0  # сброс
+        for chat_id in group_names:
+            try:
+                await client.send_message(chat_id, text)
+            except Exception:
+                continue
+
 async def main():
-    await asyncio.gather(
-        status_notifier(),
-        daily_summary()
-    )
+    await asyncio.gather(notify_alive(), send_daily_stats())
 
-client.loop.run_until_complete(main())
+client.loop.create_task(main())
+client.run_until_disconnected()
