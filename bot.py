@@ -2,8 +2,8 @@ from telethon.sync import TelegramClient, events
 import requests
 
 # Авторизация для Telethon (твой Telegram-пользователь)
-api_id = 27113756
-api_hash = '4a07d71657bc72cfa7ceb273e05b679c'
+api_id = 27133766
+api_hash = '40d7b357c572c7fa7cbe273e050c679c'
 
 # Telegram Bot API — отправка сообщений в группу
 bot_token = '7985290808:AAGle0Xeb8pHqWR-9tIqptPD_zQ-ZlahET0'
