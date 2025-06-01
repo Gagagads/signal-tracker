@@ -3,8 +3,8 @@ from datetime import datetime, timedelta
 from telethon import TelegramClient, events
 
 # ==== НАСТРОЙКИ ====
-api_id = 12345678
-api_hash = 'your_api_hash_here'
+api_id = 27481215
+api_hash = '75f495f542a5beb8ba632b70fc7ebf79'
 bot_token = '7639845168:AAG770ffbEQRP4W-Qk2jcnoG5x--SjyuzA0'
 notify_user = '@Mytracksignal'
 
