@@ -1,83 +1,79 @@
 import asyncio
-from datetime import datetime
-from telethon import TelegramClient
-from telethon.tl.functions.messages import GetHistoryRequest
+from telethon import TelegramClient, events
+from datetime import datetime, timedelta
+import re
 
-# 🔐 ЗАМЕНИ ЭТИ ДАННЫЕ НА СВОИ
-API_ID = 27481215  # ← твой API ID
-API_HASH = '75f495f542a5beb8ba632b70fc7ebf79'  # ← твой API Hash
-BOT_TOKEN = '7639845168:AAG770ffbEQRP4W-Qk2jcnoG5x--SjyuzA0'
-TARGET_GROUP_ID = -4877016471
-MENTION_USERNAME = '@Mytracksignal'
+# --- НАСТРОЙКИ ---
+api_id = 27481215  # <-- замени на свой API ID
+api_hash = '75f495f542a5beb8ba632b70fc7ebf79'  # <-- замени на свой API HASH
+session_file = 'anon'  # файл сессии без .session
 
-# Отслеживаемые каналы
-CHANNEL_IDS = [
-    -1002438264294, -1002400892367, -1002420417890,
+chat_ids = [
     -1002048172508, -1002058755890, -1002146109187,
-    -1002011050670, -1002084209596, -1002094849653,
     -1001891589065, -1001974198702, -1001840337788,
-    -1002193485779, -1002202792246, -1002215306818
+    -1002011050670, -1002084209596, -1002094849653,
+    -1002193485779, -1002202792246, -1002215306818,
+    -1002438264294, -1002400892367, -1002420417890
 ]
 
-client = TelegramClient('anon', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
-last_success = {}
+target_group_id = -4877016471  # <- ID твоей группы, куда бот отправляет уведомления
+your_tag = '@Mytracksignal'    # <- твой Telegram @юзернейм
 
-async def check_signals():
+# --- ЛОГИКА ---
+client = TelegramClient(session_file, api_id, api_hash)
+
+# Хранилище по каждому чату: последние сигналы
+chat_signal_log = {}
+
+# Каждые 5 минут — сообщение "бот работает"
+async def periodic_notify():
     while True:
-        for channel_id in CHANNEL_IDS:
-            try:
-                history = await client(GetHistoryRequest(
-                    peer=channel_id,
-                    limit=10,
-                    offset_date=None,
-                    offset_id=0,
-                    max_id=0,
-                    min_id=0,
-                    add_offset=0,
-                    hash=0
-                ))
+        await client.send_message(target_group_id, "🤖 Бот активен и ожидает сигналов.")
+        await asyncio.sleep(300)
 
-                messages = history.messages
-                recent = [m.message for m in messages if m.message]
+def clean_text(text):
+    return text.replace('\n', ' ').lower()
 
-                if len(recent) < 3:
-                    continue
+@client.on(events.NewMessage(chats=chat_ids))
+async def handler(event):
+    message_text = clean_text(event.raw_text)
 
-                valid = 0
-                for msg in recent:
-                    msg_upper = msg.upper()
-                    if 'ДАГОН' in msg_upper:
-                        valid = 0
-                    elif 'ПЛЮС' in msg_upper:
-                        valid += 1
-                    else:
-                        valid = 0
+    # Ищем сигнал без догонов
+    if "дагон" in message_text:
+        return  # пропускаем, если есть дагон
 
-                    if valid >= 3:
-                        break
+    if "+" not in message_text:
+        return  # не плюс — не сигнал
 
-                if valid >= 3 and last_success.get(channel_id) != messages[0].id:
-                    last_success[channel_id] = messages[0].id
-                    await client.send_message(
-                        TARGET_GROUP_ID,
-                        f"✅ В канале ID {channel_id} зафиксировано 3 плюса подряд без догонов. {MENTION_USERNAME}"
-                    )
+    chat_id = event.chat_id
+    now = datetime.now()
 
-            except Exception as e:
-                print(f"Ошибка в канале {channel_id}: {e}")
+    if chat_id not in chat_signal_log:
+        chat_signal_log[chat_id] = []
 
-        await asyncio.sleep(60)
+    # сохраняем сигнал
+    chat_signal_log[chat_id].append(now)
 
-async def heartbeat():
-    while True:
+    # оставляем только последние 15 минут
+    chat_signal_log[chat_id] = [
+        t for t in chat_signal_log[chat_id] if now - t < timedelta(minutes=15)
+    ]
+
+    if len(chat_signal_log[chat_id]) >= 3:
         await client.send_message(
-            TARGET_GROUP_ID,
-            "🤖 Бот активен. Ожидает сигналы..."
+            target_group_id,
+            f"🚨 {your_tag} В чате {event.chat.title or chat_id} — 3 сигнала подряд без догонов!"
         )
-        await asyncio.sleep(300)  # 5 минут
+        chat_signal_log[chat_id] = []  # сброс после уведомления
 
+# --- ЗАПУСК ---
 async def main():
-    await asyncio.gather(check_signals(), heartbeat())
+    await client.start()
+    print("Бот запущен")
+    await asyncio.gather(
+        client.run_until_disconnected(),
+        periodic_notify()
+    )
 
-with client:
-    client.loop.run_until_complete(main())
+if __name__ == '__main__':
+    asyncio.run(main())
