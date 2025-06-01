@@ -4,8 +4,8 @@ from telethon import TelegramClient
 from telethon.tl.functions.messages import GetHistoryRequest
 
 # 🔐 ЗАМЕНИ ЭТИ ДАННЫЕ НА СВОИ
-API_ID = 12345678  # ← твой API ID
-API_HASH = 'your_api_hash_here'  # ← твой API Hash
+API_ID = 27481215  # ← твой API ID
+API_HASH = '75f495f542a5beb8ba632b70fc7ebf79'  # ← твой API Hash
 BOT_TOKEN = '7639845168:AAG770ffbEQRP4W-Qk2jcnoG5x--SjyuzA0'
 TARGET_GROUP_ID = -4877016471
 MENTION_USERNAME = '@Mytracksignal'
